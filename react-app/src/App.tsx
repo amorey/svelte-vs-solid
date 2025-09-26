@@ -1,4 +1,11 @@
-import { useEffect, useState } from 'react'
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table';
+import { useEffect, useMemo, useState } from 'react'
+
 import './App.css'
 
 /**
@@ -21,7 +28,14 @@ class Matrix<T> {
   }
 
   clone(): Matrix<T> {
-    return new Matrix(this.data)
+    return new Matrix(this.data.map((row) => [...row]))
+  }
+
+  getOrElse(i: number, j: number, fallback: T): T {
+    const row = this.data[i]
+    if (!row) return fallback
+    const value = row[j]
+    return value === undefined ? fallback : value
   }
 
   static zeros<T>(rows: number, cols: number, initialValue?: T): Matrix<T> {
@@ -36,6 +50,8 @@ class Matrix<T> {
  * DataTable component
  */
 
+type TableRow = { rowIndex: number } & Record<string, number>
+
 type DataTableProps = {
   rows: number
   cols: number
@@ -43,33 +59,101 @@ type DataTableProps = {
 }
 
 const DataTable = ({ rows, cols, freq }: DataTableProps) => {
-  const [data, setData] = useState(Matrix.zeros(rows, cols, 0))
+  const safeRows = Math.max(0, rows)
+  const safeCols = Math.max(0, cols)
+
+  const [data, setData] = useState(Matrix.zeros(safeRows, safeCols, 0))
 
   useEffect(() => {
+    setData(Matrix.zeros(safeRows, safeCols, 0))
+  }, [safeRows, safeCols])
+
+  // Configure update ticker
+  useEffect(() => {
+    if (safeRows === 0 || safeCols === 0 || freq <= 0) {
+      return
+    }
+
+    const intervalMs = 1000 / freq
+
     const id = setInterval(() => {
-      setData((m) => {
-        for (let j=0; j < cols; j++) {
-          const v = Math.random();
-          const i = Math.floor(v * rows);
-          m.set(i, j, v);
+      setData((matrix) => {
+        for (let j = 0; j < safeCols; j++) {
+          const value = Math.random()
+          const i = Math.floor(value * safeRows)
+          matrix.set(i, j, value)
         }
-        return m.clone();
+        return matrix.clone()
       })
-    }, 1000/freq)
+    }, intervalMs)
 
     return () => clearInterval(id)
-  }, [rows, cols, freq]);
+  }, [safeRows, safeCols, freq])
+
+  const columnIds = useMemo(() => {
+    return Array.from({ length: safeCols }, (_, index) => `col-${index}`)
+  }, [safeCols])
+
+  const columns = useMemo<ColumnDef<TableRow>[]>(() => {
+    const valueColumns: ColumnDef<TableRow>[] = columnIds.map((columnId, index) => ({
+      id: columnId,
+      header: `Col ${index + 1}`,
+      accessorKey: columnId,
+      cell: (info) => info.getValue<number>().toFixed(5),
+    }))
+
+    return [
+      {
+        id: 'row-index',
+        header: '#',
+        accessorKey: 'rowIndex',
+        cell: (info) => info.getValue<number>() + 1,
+      },
+      ...valueColumns,
+    ]
+  }, [columnIds])
+
+  const tableData = useMemo<TableRow[]>(() => {
+    return Array.from({ length: safeRows }, (_, rowIndex) => {
+      const row: TableRow = { rowIndex }
+
+      columnIds.forEach((columnId, columnIndex) => {
+        row[columnId] = data.getOrElse(rowIndex, columnIndex, 0)
+      })
+
+      return row
+    })
+  }, [safeRows, columnIds, data])
+
+  const table = useReactTable<TableRow>({
+    data: tableData,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  })
 
   return (
     <table>
+      <thead>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <tr key={headerGroup.id}>
+            {headerGroup.headers.map((header) => (
+              <th key={header.id}>
+                {header.isPlaceholder
+                  ? null
+                  : flexRender(header.column.columnDef.header, header.getContext())}
+              </th>
+            ))}
+          </tr>
+        ))}
+      </thead>
       <tbody>
-        {Array.from({ length: rows }, (_, i) => (
-          <tr key={i}>
-          {Array.from({ length: cols }, (_, j) => (
-            <td key={j}>
-              {data.get(i, j)}
-            </td>
-          ))}
+        {table.getRowModel().rows.map((row) => (
+          <tr key={row.id}>
+            {row.getVisibleCells().map((cell) => (
+              <td key={cell.id}>
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </td>
+            ))}
           </tr>
         ))}
       </tbody>
