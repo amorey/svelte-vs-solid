@@ -1,9 +1,10 @@
 import {
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import type { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef, SortingState } from '@tanstack/react-table'
 import { useEffect, useMemo, useState } from 'react'
 
 import './App.css'
@@ -63,6 +64,9 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
   const safeCols = Math.max(0, cols)
 
   const [data, setData] = useState(Matrix.zeros(safeRows, safeCols, 0))
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: 'row-index', desc: false },
+  ])
 
   useEffect(() => {
     setData(Matrix.zeros(safeRows, safeCols, 0))
@@ -79,9 +83,8 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
     const id = setInterval(() => {
       setData((matrix) => {
         for (let j = 0; j < safeCols; j++) {
-          const value = Math.random()
-          const i = Math.floor(value * safeRows)
-          matrix.set(i, j, value)
+          const i = Math.floor(Math.random() * safeRows)
+          matrix.set(i, j, (new Date()).getTime())
         }
         return matrix.clone()
       })
@@ -128,7 +131,11 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
   const table = useReactTable<TableRow>({
     data: tableData,
     columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    enableSortingRemoval: false,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
   })
 
   return (
@@ -138,9 +145,19 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
           <tr key={headerGroup.id}>
             {headerGroup.headers.map((header) => (
               <th key={header.id}>
-                {header.isPlaceholder
-                  ? null
-                  : flexRender(header.column.columnDef.header, header.getContext())}
+                {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                  <button
+                    type="button"
+                    onClick={header.column.getToggleSortingHandler()}
+                    className="sortable-column"
+                  >
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.column.getIsSorted() === 'asc' && ' ^'}
+                    {header.column.getIsSorted() === 'desc' && ' v'}
+                  </button>
+                ) : (
+                  flexRender(header.column.columnDef.header, header.getContext())
+                )}
               </th>
             ))}
           </tr>
