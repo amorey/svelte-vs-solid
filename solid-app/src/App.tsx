@@ -1,6 +1,43 @@
-import { createSignal } from 'solid-js'
+import { createEffect, createSignal, onCleanup } from 'solid-js'
 import type { JSX } from 'solid-js'
 import './App.css'
+
+/**
+ * Display FPS component
+ */
+
+const DisplayFPS = () => {
+  const [fps, setFps] = createSignal(0);
+
+  createEffect(() => {
+    let last = 0;
+    let frames = 0;
+    let rafId: number;
+
+    const loop = (time: number) => {
+      if (!last) last = time;
+      frames++;
+
+      const elapsed = time - last;
+      if (elapsed >= 1000) {
+        setFps(Math.round((frames * 1000) / elapsed)); // frames per second
+        frames = 0;
+        last = time;
+      }
+
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    onCleanup(() => cancelAnimationFrame(rafId));
+  })
+
+  return <span>{fps()}</span>;
+}
+
+/**
+ * App component
+ */
 
 function App() {
   const [rows, setRows] = createSignal(10)
@@ -23,7 +60,10 @@ function App() {
   };
 
   return (
-    <>
+    <main>
+      <div>
+        FPS: <DisplayFPS />
+      </div>
       <ul>
         <li>
           <label>Rows:</label>
@@ -41,7 +81,7 @@ function App() {
       {rows()}
       {cols()}
       {freq()}
-    </>
+    </main>
   )
 }
 
