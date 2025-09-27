@@ -1,41 +1,14 @@
 import { destructure } from '@solid-primitives/destructure';
 import { For, createEffect, createSignal, onCleanup } from 'solid-js'
+import { createStore } from 'solid-js/store';
 import type { JSX } from 'solid-js'
 import './App.css'
 
 /**
- * Matrix class
+ * Helper methods
  */
 
-class Matrix<T> {
-  private data: T[][]
-
-  constructor(data: T[][]) {
-    this.data = data;
-  }
-
-  get(i: number, j: number): T {
-    return this.data[i][j]
-  }
-
-  set(i: number, j: number, value: T): void {
-    this.data[i][j] = value
-  }
-
-  getOrElse(i: number, j: number, fallback: T): T {
-    const row = this.data[i]
-    if (!row) return fallback
-    const value = row[j]
-    return value === undefined ? fallback : value
-  }
-
-  static zeros<T>(rows: number, cols: number, initialValue?: T): Matrix<T> {
-    const data = Array.from({ length: rows }, () =>
-      Array.from({ length: cols }, () => initialValue as T)
-    );
-    return new Matrix(data);
-  }
-}
+const newGrid = (rows: number, cols: number) => Array.from({ length: rows }, () => Array(cols).fill(0));
 
 /**
  * DataTable component
@@ -48,23 +21,46 @@ type DataTableProps = {
 }
 
 const DataTable = (props: DataTableProps) => {
-  const { rows, cols, freq } = destructure(props);
-  const [data, setData] = createSignal(Matrix.zeros(rows(), cols(), 0));
+  const { rows, cols, freq } = destructure(props)
 
-  // Reset matrix when rows/cols change
+  // Per-cell reactive store
+  const [data, setData] = createStore<number[][]>(newGrid(rows(), cols()))
+
+  // Re-shape grid on rols/cols change
   createEffect(() => {
-    setData(() => Matrix.zeros(rows(), cols(), 0));
+    setData(newGrid(rows(), cols()))
+  })
+
+  // Ticker
+  createEffect(() => {
+    const rowsVal = rows();
+    const colsVal = cols();
+    const freqVal = freq();
+
+    if (rowsVal <= 0 || colsVal <= 0 || freqVal <= 0) return
+
+    let rev = 1;
+
+    const id = setInterval(() => {
+      for (let j = 0; j < colsVal; j++) {
+        const i = Math.floor(Math.random() * rowsVal);
+        setData(i, j, rev);
+      }
+      rev += 1
+    }, 1000 / freqVal)
+
+    onCleanup(() => clearInterval(id))
   })
 
   return (
     <table>
       <tbody>
-        <For each={Array.from({ length: rows() }, (_, i) => i)}>
-          {(i) => (
+        <For each={data}>
+          {(row) => (
             <tr>
-              <For each={Array.from({ length: cols() }, (_, j) => j)}>
-                {(j) => (
-                  <td>{data().getOrElse(i, j, 0)}</td>
+              <For each={row}>
+                {(cell) => (
+                  <td>{cell}</td>
                 )}
               </For>
             </tr>
