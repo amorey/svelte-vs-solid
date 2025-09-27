@@ -1,3 +1,21 @@
+table {
+  border: 1px solid #EEE;
+  padding: 2px;
+}
+
+table th, td {
+  padding: 2px;
+}
+
+table th {
+  text-align: left;
+}
+
+table td:not(:first-child), th:not(:first-child) {
+  text-align: center;
+  width: 100px;
+}
+
 .sortable-column {
   background: none;
   border: none;

@@ -5,7 +5,7 @@ import {
   useReactTable,
 } from '@tanstack/react-table'
 import type { ColumnDef, SortingState } from '@tanstack/react-table'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import './App.css'
 
@@ -26,10 +26,6 @@ class Matrix<T> {
 
   set(i: number, j: number, value: T): void {
     this.data[i][j] = value
-  }
-
-  clone(): Matrix<T> {
-    return new Matrix(this.data.map((row) => [...row]))
   }
 
   getOrElse(i: number, j: number, fallback: T): T {
@@ -63,16 +59,14 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
   const safeRows = Math.max(0, rows)
   const safeCols = Math.max(0, cols)
 
-  const [data, setData] = useState(Matrix.zeros(safeRows, safeCols, 0))
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: 'row-index', desc: false },
-  ])
+  const dataRef = useRef(Matrix.zeros(safeRows, safeCols, 0));
+  const revRef = useRef(0);
 
-  useEffect(() => {
-    setData(Matrix.zeros(safeRows, safeCols, 0))
-  }, [safeRows, safeCols])
+  const [dataBox, setDataBox ] = useState({ data: dataRef.current, rev: revRef.current });
 
-  // Configure update ticker
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'row-index', desc: false }])
+
+  // Update ticker
   useEffect(() => {
     if (safeRows === 0 || safeCols === 0 || freq <= 0) {
       return
@@ -81,17 +75,19 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
     const intervalMs = 1000 / freq
 
     const id = setInterval(() => {
-      setData((matrix) => {
-        for (let j = 0; j < safeCols; j++) {
-          const i = Math.floor(Math.random() * safeRows)
-          matrix.set(i, j, (new Date()).getTime())
-        }
-        return matrix.clone()
-      })
+      const data = dataRef.current;
+      const rev = revRef.current += 1;
+
+      for (let j = 0; j < safeCols; j++) {
+        const i = Math.floor(Math.random() * safeRows)
+        data.set(i, j, rev)
+      }
+
+      setDataBox({ data, rev });
     }, intervalMs)
 
     return () => clearInterval(id)
-  }, [safeRows, safeCols, freq])
+  }, [safeRows, safeCols, freq, setDataBox])
 
   const columnIds = useMemo(() => {
     return Array.from({ length: safeCols }, (_, index) => `col-${index}`)
@@ -102,7 +98,7 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
       id: columnId,
       header: `Col ${index + 1}`,
       accessorKey: columnId,
-      cell: (info) => info.getValue<number>().toFixed(5),
+      cell: (info) => info.getValue<number>(),
     }))
 
     return [
@@ -121,12 +117,12 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
       const row: TableRow = { rowIndex }
 
       columnIds.forEach((columnId, columnIndex) => {
-        row[columnId] = data.getOrElse(rowIndex, columnIndex, 0)
+        row[columnId] = dataBox.data.getOrElse(rowIndex, columnIndex, 0)
       })
 
       return row
     })
-  }, [safeRows, columnIds, data])
+  }, [safeRows, columnIds, dataBox])
 
   const table = useReactTable<TableRow>({
     data: tableData,
@@ -152,8 +148,8 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
                     className="sortable-column"
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
-                    {header.column.getIsSorted() === 'asc' && ' ^'}
-                    {header.column.getIsSorted() === 'desc' && ' v'}
+                    {header.column.getIsSorted() === 'asc' && ' ▲'}
+                    {header.column.getIsSorted() === 'desc' && ' ▼'}
                   </button>
                 ) : (
                   flexRender(header.column.columnDef.header, header.getContext())
@@ -176,6 +172,45 @@ const DataTable = ({ rows, cols, freq }: DataTableProps) => {
       </tbody>
     </table>
   )
+}
+
+/**
+ * DisplayFPS component
+ */
+
+const DisplayFPS = () => {
+  const samples = 60;
+  const [fps, setFps] = useState(0);
+  const last = useRef(performance.now());
+  const frameTimes = useRef<number[]>([]);
+  const fpsRef = useRef(0);
+
+  useEffect(() => {
+    let rafId: number;
+    const loop = (now: number) => {
+      const delta = now - last.current;
+      last.current = now;
+
+      frameTimes.current.push(delta);
+      if (frameTimes.current.length > samples) frameTimes.current.shift();
+
+      const average =
+        frameTimes.current.reduce((acc, t) => acc + t, 0) /
+        frameTimes.current.length;
+
+      const averaged = average ? Math.round(1000 / average) : 0;
+      if (averaged !== fpsRef.current) {
+        fpsRef.current = averaged;
+        setFps(averaged);
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  return fps;
 }
 
 /**
@@ -203,7 +238,10 @@ function App() {
   }
 
   return (
-    <>
+    <main>
+      <div>
+        FPS: <DisplayFPS />
+      </div>
       <ul>
         <li>
           <label>Rows:</label>
@@ -219,7 +257,7 @@ function App() {
         </li>
       </ul>
       <DataTable key={`${rows}-${cols}`} rows={rows} cols={cols} freq={freq} />
-    </>
+    </main>
   )
 }
 
