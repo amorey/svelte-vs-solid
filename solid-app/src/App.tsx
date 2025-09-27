@@ -1,5 +1,7 @@
 import { destructure } from '@solid-primitives/destructure';
-import { For, createEffect, createSignal, onCleanup } from 'solid-js'
+import { createSolidTable, flexRender, getCoreRowModel } from '@tanstack/solid-table';
+import type { ColumnDef } from '@tanstack/solid-table';
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 import { createStore } from 'solid-js/store';
 import type { JSX } from 'solid-js'
 import './App.css'
@@ -26,6 +28,8 @@ const DataTable = (props: DataTableProps) => {
   // Per-cell reactive store
   const [data, setData] = createStore<number[][]>(newGrid(rows(), cols()))
 
+  const [tick, setTick] = createSignal(1);
+
   // Re-shape grid on rols/cols change
   createEffect(() => {
     setData(newGrid(rows(), cols()))
@@ -47,20 +51,82 @@ const DataTable = (props: DataTableProps) => {
         setData(i, j, rev);
       }
       rev += 1
+      setTick(rev);
     }, 1000 / freqVal)
 
     onCleanup(() => clearInterval(id))
   })
 
+  // --- Memoized columns based on matrix width ---
+  const columns = createMemo<ColumnDef<number[], number>[]>(() => {
+    return Array.from({ length: cols() }, (_, c) => ({
+      id: `col_${c}`,
+      header: () => `Col ${c}`,
+      accessorFn: (row) => row[c],
+      cell: (ctx) => ctx.getValue(),
+    }))
+  })
+
+  // -- Memoized table data ---
+  const tableData = createMemo<number[][]>(() => {
+    tick()
+    return data.slice()
+  })
+
+  // --- Table instance depends on the store ---
+  const table = createSolidTable({
+    get data() {
+      return tableData()
+    },
+    get columns() {
+      return columns()
+    },
+    getCoreRowModel: getCoreRowModel(),
+  })
+
   return (
     <table>
+      <thead>
+        <For each={table.getHeaderGroups()}>
+          {(hg) => (
+            <tr>
+              <For each={hg.headers}>
+                {(header) => (
+                  <th class="border px-2 py-1 text-left font-semibold">
+                    <Show
+                      when={!header.isPlaceholder}
+                      fallback={<span>&nbsp;</span>}
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
+                    </Show>
+                  </th>
+                )}
+              </For>
+            </tr>
+          )}
+        </For>
+      </thead>
       <tbody>
-        <For each={data}>
+        <tr>
+          <td>{tick()}</td>
+        </tr>
+      </tbody>
+      <tbody>
+        <For each={table.getRowModel().rows}>
           {(row) => (
             <tr>
-              <For each={row}>
+              <For each={row.getVisibleCells()}>
                 {(cell) => (
-                  <td>{cell}</td>
+                  <td class="border px-2 py-1">
+                    {flexRender(
+                      cell.column.columnDef.cell,
+                      cell.getContext()
+                    )}
+                    x
+                  </td>
                 )}
               </For>
             </tr>
