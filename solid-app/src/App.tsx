@@ -1,8 +1,8 @@
 import { destructure } from '@solid-primitives/destructure';
 import { createSolidTable, flexRender, getCoreRowModel } from '@tanstack/solid-table';
 import type { ColumnDef } from '@tanstack/solid-table';
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
-import { createStore } from 'solid-js/store';
+import { For, Show, batch, createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js'
+import { createStore, reconcile } from 'solid-js/store';
 import type { JSX } from 'solid-js'
 import './App.css'
 
@@ -28,55 +28,65 @@ const DataTable = (props: DataTableProps) => {
   // Per-cell reactive store
   const [data, setData] = createStore<number[][]>(newGrid(rows(), cols()))
 
-  const [tick, setTick] = createSignal(1);
-
   // Re-shape grid on rols/cols change
   createEffect(() => {
-    setData(newGrid(rows(), cols()))
+    const r = rows();
+    const c = cols();
+    setData(newGrid(r, c))
   })
 
   // Ticker
   createEffect(() => {
-    const rowsVal = rows();
-    const colsVal = cols();
-    const freqVal = freq();
+    const r = rows();
+    const c = cols();
+    const f = freq();
 
-    if (rowsVal <= 0 || colsVal <= 0 || freqVal <= 0) return
+    if (r <= 0 || c <= 0 || f <= 0) return
 
     let rev = 1;
+    const intervalMs = 1000 / f;
 
     const id = setInterval(() => {
-      for (let j = 0; j < colsVal; j++) {
-        const i = Math.floor(Math.random() * rowsVal);
-        setData(i, j, rev);
-      }
-      rev += 1
-      setTick(rev);
-    }, 1000 / freqVal)
+      untrack(() => {
+        batch(() => {
+          for (let j = 0; j < c; j++) {
+            const i = Math.floor(Math.random() * r)
+            setData(i, j, rev)
+          }
+          rev += 1
+        })
+      })
+    }, intervalMs)
 
     onCleanup(() => clearInterval(id))
   })
+
+  // Solid component
+  const Cell = (p: { i: number; j: number }) => {
+    return <>{data[p.i][p.j]}</>;
+  };
 
   // --- Memoized columns based on matrix width ---
   const columns = createMemo<ColumnDef<number[], number>[]>(() => {
     return Array.from({ length: cols() }, (_, c) => ({
       id: `col_${c}`,
       header: () => `Col ${c}`,
-      accessorFn: (row) => row[c],
-      cell: (ctx) => ctx.getValue(),
+      accessorFn: (_row) => 0,
+      cell: (ctx) => <Cell i={ctx.row.index} j={c} />,
     }))
   })
 
-  // -- Memoized table data ---
-  const tableData = createMemo<number[][]>(() => {
-    tick()
-    return data.slice()
+  // --- Memoized table data object ---
+  const tableData = createMemo(() => {
+    rows();
+    cols();
+    return untrack(() => [...data]);
   })
 
   // --- Table instance depends on the store ---
   const table = createSolidTable({
     get data() {
-      return tableData()
+      return tableData();
     },
     get columns() {
       return columns()
@@ -110,11 +120,6 @@ const DataTable = (props: DataTableProps) => {
         </For>
       </thead>
       <tbody>
-        <tr>
-          <td>{tick()}</td>
-        </tr>
-      </tbody>
-      <tbody>
         <For each={table.getRowModel().rows}>
           {(row) => (
             <tr>
@@ -125,7 +130,6 @@ const DataTable = (props: DataTableProps) => {
                       cell.column.columnDef.cell,
                       cell.getContext()
                     )}
-                    x
                   </td>
                 )}
               </For>
