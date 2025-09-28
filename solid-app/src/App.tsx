@@ -2,7 +2,7 @@ import { destructure } from '@solid-primitives/destructure';
 import { createSolidTable, flexRender, getCoreRowModel } from '@tanstack/solid-table';
 import type { ColumnDef } from '@tanstack/solid-table';
 import { For, Show, batch, createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js'
-import { createStore, reconcile } from 'solid-js/store';
+import { createStore } from 'solid-js/store';
 import type { JSX } from 'solid-js'
 import './App.css'
 
@@ -28,14 +28,18 @@ const DataTable = (props: DataTableProps) => {
   // Per-cell reactive store
   const [data, setData] = createStore<number[][]>(newGrid(rows(), cols()))
 
+    // Shape signal (used to trigger recomputes)
+  const [shapeVer, setShapeVer] = createSignal(0);
+
   // Re-shape grid on rols/cols change
   createEffect(() => {
     const r = rows();
     const c = cols();
     setData(newGrid(r, c))
+    setShapeVer((v) => v + 1);
   })
 
-  // Ticker
+  // Update ticker
   createEffect(() => {
     const r = rows();
     const c = cols();
@@ -47,14 +51,12 @@ const DataTable = (props: DataTableProps) => {
     const intervalMs = 1000 / f;
 
     const id = setInterval(() => {
-      untrack(() => {
-        batch(() => {
-          for (let j = 0; j < c; j++) {
-            const i = Math.floor(Math.random() * r)
-            setData(i, j, rev)
-          }
-          rev += 1
-        })
+      batch(() => {
+        for (let j = 0; j < c; j++) {
+          const i = Math.floor(Math.random() * r)
+          setData(i, j, rev)
+        }
+        rev += 1
       })
     }, intervalMs)
 
@@ -68,18 +70,19 @@ const DataTable = (props: DataTableProps) => {
 
   // --- Memoized columns based on matrix width ---
   const columns = createMemo<ColumnDef<number[], number>[]>(() => {
-    return Array.from({ length: cols() }, (_, c) => ({
-      id: `col_${c}`,
-      header: () => `Col ${c}`,
+    const c = cols();
+
+    return Array.from({ length: c }, (_, j) => ({
+      id: `col_${j}`,
+      header: () => `Col ${j}`,
       accessorFn: (_row) => 0,
-      cell: (ctx) => <Cell i={ctx.row.index} j={c} />,
+      cell: (ctx) => <Cell i={ctx.row.index} j={j} />,
     }))
   })
 
   // --- Memoized table data object ---
   const tableData = createMemo(() => {
-    rows();
-    cols();
+    shapeVer();
     return untrack(() => [...data]);
   })
 
@@ -107,10 +110,7 @@ const DataTable = (props: DataTableProps) => {
                       when={!header.isPlaceholder}
                       fallback={<span>&nbsp;</span>}
                     >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )}
+                      {flexRender(header.column.columnDef.header, header.getContext())}
                     </Show>
                   </th>
                 )}
@@ -126,10 +126,7 @@ const DataTable = (props: DataTableProps) => {
               <For each={row.getVisibleCells()}>
                 {(cell) => (
                   <td class="border px-2 py-1">
-                    {flexRender(
-                      cell.column.columnDef.cell,
-                      cell.getContext()
-                    )}
+                    {flexRender( cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 )}
               </For>
